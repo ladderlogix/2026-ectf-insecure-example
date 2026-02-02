@@ -1,0 +1,48 @@
+name: Build eCTF Firmware
+
+on:
+  push:
+    branches: ["*"]
+  pull_request:
+    branches: ["*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Generate global secrets
+        run: |
+          uvx --with-editable ./ectf26_design --from ectf26_design secrets global.secrets 1
+
+      - name: Build Docker image
+        run: docker build -t build-hsm ./firmware/
+
+      - name: Create output directory
+        run: mkdir -p hsm-output
+
+      - name: Build HSM firmware
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}/firmware:/hsm \
+            -v ${{ github.workspace }}/global.secrets:/secrets/global.secrets:ro \
+            -v ${{ github.workspace }}/hsm-output:/out \
+            -e HSM_PIN=0x123456 \
+            -e PERMISSIONS='1=RWC' \
+            build-hsm
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: hsm-firmware
+          path: |
+            hsm-output/hsm.elf
+            hsm-output/hsm.bin
+          retention-days: 30
